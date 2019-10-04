@@ -17,6 +17,8 @@ ENV BUILD_BPF=${BUILD_BPF}
 ENV BUILD_WARNINGS_AS_ERRORS=${BUILD_WARNINGS_AS_ERRORS}
 ENV MAKE_JOBS=${MAKE_JOBS}
 ENV FALCO_VERSION=${FALCO_VERSION}
+ENV GOPATH /build/gopath
+ENV GOCACHE /build/gocache
 
 ARG DOCKER_VERSION=1.11.0
 ARG CMAKE_VERSION=3.5.0
@@ -37,6 +39,10 @@ RUN source scl_source enable devtoolset-7 && \
 
 # fixme: deps needs a fix into CMakeLists.txt
 RUN yum -y install libyaml-devel && yum clean all -y
+
+# Install go (required for falco-psp-conv binary)
+RUN curl -O https://dl.google.com/go/go1.12.10.linux-amd64.tar.gz
+RUN tar -C /usr/local -xzf go1.12.10.linux-amd64.tar.gz
 
 COPY ./root /
 
