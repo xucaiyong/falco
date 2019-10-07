@@ -14,7 +14,8 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 #
-set(FALCO_TESTS_SOURCES test_base.cpp engine/test_token_bucket.cpp falco/test_webserver.cpp)
+set(FALCO_TESTS_SOURCES test_base.cpp engine/test_token_bucket.cpp
+                        falco/test_webserver.cpp)
 
 set(FALCO_TESTED_LIBRARIES falco_engine)
 
@@ -41,8 +42,8 @@ if(FALCO_BUILD_TESTS)
            "${YAMLCPP_INCLUDE_DIR}"
            "${CIVETWEB_INCLUDE_DIR}"
            "${PROJECT_SOURCE_DIR}/userspace/falco")
-  add_dependencies(falco_test catch2)
 
+  add_dependencies(falco_test catch2)
   include(CMakeParseArguments)
   include(CTest)
   include(Catch)
