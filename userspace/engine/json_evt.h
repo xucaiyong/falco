@@ -66,7 +66,8 @@ protected:
 class json_event_value
 {
 public:
-	enum param_type {
+	enum param_type
+	{
 		JT_STRING,
 		JT_INT64,
 		JT_INT64_PAIR
@@ -93,7 +94,7 @@ public:
 private:
 	param_type m_type;
 
-	static bool parse_as_pair_int64(std::pair<int64_t,int64_t> &pairval, const std::string &val);
+	static bool parse_as_pair_int64(std::pair<int64_t, int64_t> &pairval, const std::string &val);
 	static bool parse_as_int64(int64_t &intval, const std::string &val);
 
 	// The number of possible types is small so far, so sticking
@@ -101,18 +102,17 @@ private:
 
 	std::string m_stringval;
 	int64_t m_intval;
-	std::pair<int64_t,int64_t> m_pairval;
+	std::pair<int64_t, int64_t> m_pairval;
 };
 
 class json_event_filter_check : public gen_event_filter_check
 {
 public:
-
 	static std::string no_value;
 
 	enum index_mode
 	{
-		IDX_REQUIRED,
+		IDX_REQUIRED = 0,
 		IDX_ALLOWED,
 		IDX_NONE
 	};
@@ -121,7 +121,7 @@ public:
 
 	enum index_type
 	{
-		IDX_KEY,
+		IDX_KEY = 0,
 		IDX_NUMERIC
 	};
 
@@ -167,7 +167,7 @@ public:
 	bool compare(gen_event *evt);
 
 	// This always returns a const extracted_values_t *. The pointer points to m_evalues;
-	uint8_t* extract(gen_event *evt, uint32_t* len, bool sanitize_strings = true) final;
+	uint8_t *extract(gen_event *evt, uint32_t *len, bool sanitize_strings = true) final;
 
 	const std::string &field();
 	const std::string &idx();
@@ -193,7 +193,6 @@ public:
 	const values_t &extracted_values();
 
 protected:
-
 	// Subclasses can override this method, calling
 	// add_extracted_value to add extracted values.
 	virtual bool extract_values(json_event *jevt);
@@ -209,7 +208,7 @@ protected:
 	// values instead of using a json pointer. An example is
 	// ka.uri.param, which parses the query string to extract
 	// key=value parameters.
-	typedef std::function<bool (const nlohmann::json &, json_event_filter_check &jchk)> extract_t;
+	typedef std::function<bool(const nlohmann::json &, json_event_filter_check &jchk)> extract_t;
 
 	struct alias
 	{
@@ -217,8 +216,8 @@ protected:
 		// with just the pointer list or with a custom
 		// extraction function.
 		alias();
-	        alias(std::list<nlohmann::json::json_pointer> ptrs);
-	        alias(extract_t extract);
+		alias(std::list<nlohmann::json::json_pointer> ptrs);
+		alias(extract_t extract);
 
 		virtual ~alias();
 
@@ -292,16 +291,14 @@ public:
 	jevt_filter_check();
 	virtual ~jevt_filter_check();
 
-        int32_t parse_field_name(const char* str, bool alloc_state, bool needed_for_filtering) final;
+	int32_t parse_field_name(const char *str, bool alloc_state, bool needed_for_filtering) final;
 
 	json_event_filter_check *allocate_new();
 
 protected:
-
 	bool extract_values(json_event *jevt) final;
 
 private:
-
 	// When the field is jevt_value, a json pointer representing
 	// the index in m_idx
 	nlohmann::json::json_pointer m_idx_ptr;
