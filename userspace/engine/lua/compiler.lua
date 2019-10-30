@@ -153,47 +153,9 @@ function get_filters(ast)
    return filters
 end
 
-function compiler.expand_lists_in(source, list_defs)
+function compiler.compile_macro(rules_mgr, line, macro_defs)
 
-   for name, def in pairs(list_defs) do
-
-      local bpos = string.find(source, name, 1, true)
-
-      while bpos ~= nil do
-	 def.used = true
-
-	 local epos = bpos + string.len(name)
-
-	 -- The characters surrounding the name must be delimiters of beginning/end of string
-	 if (bpos == 1 or string.match(string.sub(source, bpos-1, bpos-1), "[%s(),=]")) and (epos > string.len(source) or string.match(string.sub(source, epos, epos), "[%s(),=]")) then
-	    new_source = ""
-
-	    if bpos > 1 then
-	       new_source = new_source..string.sub(source, 1, bpos-1)
-	    end
-
-	    sub = table.concat(def.items, ", ")
-
-	    new_source = new_source..sub
-
-	    if epos <= string.len(source) then
-	       new_source = new_source..string.sub(source, epos, string.len(source))
-	    end
-
-	    source = new_source
-	    bpos = bpos + (string.len(sub)-string.len(name))
-	 end
-
-	 bpos = string.find(source, name, bpos+1, true)
-      end
-   end
-
-   return source
-end
-
-function compiler.compile_macro(line, macro_defs, list_defs)
-
-   line = compiler.expand_lists_in(line, list_defs)
+   line = falco_rules.expand_lists_in(rules_mgr, line)
 
    local ast, error_msg = parser.parse_filter(line)
 
@@ -227,9 +189,9 @@ end
 --[[
    Parses a single filter, then expands macros using passed-in table of definitions. Returns resulting AST.
 --]]
-function compiler.compile_filter(name, source, macro_defs, list_defs)
+function compiler.compile_filter(rules_mgr, name, source, macro_defs)
 
-   source = compiler.expand_lists_in(source, list_defs)
+   source = falco_rules.expand_lists_in(rules_mgr, source)
 
    local ast, error_msg = parser.parse_filter(source)
 

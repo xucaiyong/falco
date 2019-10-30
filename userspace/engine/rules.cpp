@@ -31,6 +31,9 @@ const static struct luaL_reg ll_falco_rules [] =
 	{"add_k8s_audit_filter", &falco_rules::add_k8s_audit_filter},
 	{"enable_rule", &falco_rules::enable_rule},
 	{"engine_version", &falco_rules::engine_version},
+	{"add_list", &falco_rules::add_list},
+	{"expand_lists_in", &falco_rules::expand_lists_in},
+	{"warn_unused_lists", &falco_rules::warn_unused_lists},
 	{NULL,NULL}
 };
 
@@ -215,6 +218,172 @@ int falco_rules::engine_version(lua_State *ls)
 	lua_pushnumber(ls, rules->m_engine->engine_version());
 
 	return 1;
+}
+
+int falco_rules::add_list(lua_State *ls)
+{
+	if (! lua_islightuserdata(ls, -4) ||
+	    ! lua_isstring(ls, -3) ||
+	    ! lua_istable(ls, -2) ||
+	    ! lua_isboolean(ls, -1))
+	{
+		lua_pushstring(ls, "Invalid arguments passed to add_list()");
+		lua_error(ls);
+	}
+
+	falco_rules *rules = (falco_rules *) lua_topointer(ls, -4);
+	std::string name = lua_tostring(ls, -3);
+	std::list<std::string> items;
+	bool append = lua_toboolean(ls, -1);
+
+	lua_pushnil(ls);  /* first key */
+	while (lua_next(ls, -3) != 0) {
+                // key is at index -2, value is at index
+                // -1. We want the values.
+		items.push_back(lua_tostring(ls, -1));
+
+		// Remove value, keep key for next iteration
+		lua_pop(ls, 1);
+	}
+
+	rules->add_list(name, items, append);
+	return 0;
+}
+
+void falco_rules::add_list(std::string &name, std::list<std::string> &items, bool append)
+{
+	list_t expanded;
+
+	expanded.m_used = false;
+
+	if(append)
+	{
+		auto it = m_lists.find(name);
+
+		// No need to return error, appending to nonexistent
+		// list should have returned error in lua before
+		// getting to this point.
+		if(it != m_lists.end())
+		{
+			expanded = it->second;
+		}
+	}
+
+	for(auto &item : items)
+	{
+		// The list items might refer to other lists, so expand those now
+		auto it = m_lists.find(item);
+		if(it == m_lists.end())
+		{
+			expanded.m_items.push_back(item);
+		}
+		else
+		{
+			for(auto &exp : it->second.m_items)
+			{
+				expanded.m_items.push_back(exp);
+			}
+		}
+	}
+
+	m_lists[name] = expanded;
+}
+
+int falco_rules::expand_lists_in(lua_State *ls)
+{
+	if (! lua_islightuserdata(ls, -2) ||
+	    ! lua_isstring(ls, -1))
+	{
+		lua_pushstring(ls, "Invalid arguments passed to expand_lists_in()");
+		lua_error(ls);
+	}
+
+	falco_rules *rules = (falco_rules *) lua_topointer(ls, -2);
+	std::string source = lua_tostring(ls, -1);
+
+	std::string ret = rules->expand_lists_in(source);
+	fprintf(stderr, "RET %s\n", ret.c_str());
+	lua_pushstring(ls, ret.c_str());
+
+	return 1;
+}
+
+std::string falco_rules::expand_lists_in(std::string &source)
+{
+	std::vector<std::string> tokens;
+
+	size_t i=0, j;
+	while ((j = source.find_first_of(" \t\r\n(),=", i)) != std::string::npos)
+	{
+		if(j > i)
+		{
+			tokens.push_back(source.substr(i, j-i));
+		}
+		tokens.push_back(source.substr(j, 1));
+		i = j+1;
+	}
+
+	if(i < source.size())
+	{
+		tokens.push_back(source.substr(i));
+	}
+
+	std::string ret = "";
+	for(auto tok : tokens)
+	{
+		auto it = m_lists.find(tok);
+		if(it == m_lists.end())
+		{
+			ret += tok;
+		}
+		else
+		{
+			it->second.m_used = true;
+
+			bool first = true;
+			for (auto &item : it->second.m_items)
+			{
+				if(first)
+				{
+					first= false;
+				}
+				else
+				{
+					ret += ", ";
+				}
+
+				ret += item;
+			}
+		}
+	}
+
+	return ret;
+}
+
+int falco_rules::warn_unused_lists(lua_State *ls)
+{
+	if (! lua_islightuserdata(ls, -1))
+	{
+		lua_pushstring(ls, "Invalid arguments passed to expand_lists_in()");
+		lua_error(ls);
+	}
+
+	falco_rules *rules = (falco_rules *) lua_topointer(ls, -1);
+
+	rules->warn_unused_lists();
+
+	return 0;
+}
+
+void falco_rules::warn_unused_lists()
+{
+	for(auto &it : m_lists)
+	{
+		if(!it.second.m_used)
+		{
+			printf("Warning: list %s not refered to by any rule/macro/list", it.first.c_str());
+		}
+	}
 }
 
 void falco_rules::load_rules(const string &rules_content,

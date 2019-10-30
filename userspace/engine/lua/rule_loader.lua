@@ -130,16 +130,15 @@ end
 -- object. The by_name index is used for things like describing rules,
 -- and the by_idx index is used to map the relational node index back
 -- to a rule.
-local state = {macros={}, lists={}, filter_ast=nil, rules_by_name={},
-	       skipped_rules_by_name={}, macros_by_name={}, lists_by_name={},
-	       n_rules=0, rules_by_idx={}, ordered_rule_names={}, ordered_macro_names={}, ordered_list_names={}}
+local state = {macros={}, filter_ast=nil, rules_by_name={},
+	       skipped_rules_by_name={}, macros_by_name={}, defined_lists={},
+	       n_rules=0, rules_by_idx={}}
 
 local function reset_rules(rules_mgr)
    falco_rules.clear_filters(rules_mgr)
    state.n_rules = 0
    state.rules_by_idx = {}
    state.macros = {}
-   state.lists = {}
 end
 
 -- From http://lua-users.org/wiki/TableUtils
@@ -305,7 +304,7 @@ function load_rules_doc(rules_mgr, doc, load_state)
 	 end
 
 	 if state.macros_by_name[v['macro']] == nil then
-	    state.ordered_macro_names[#state.ordered_macro_names+1] = v['macro']
+	    load_state.ordered_macro_names[#load_state.ordered_macro_names+1] = v['macro']
 	 end
 
 	 for j, field in ipairs({'condition'}) do
@@ -341,10 +340,6 @@ function load_rules_doc(rules_mgr, doc, load_state)
 	    return false, build_error_with_context(v['context'], "List name is empty")
 	 end
 
-	 if state.lists_by_name[v['list']] == nil then
-	    state.ordered_list_names[#state.ordered_list_names+1] = v['list']
-	 end
-
 	 for j, field in ipairs({'items'}) do
 	    if (v[field] == nil) then
 	       return false, build_error_with_context(v['context'], "List must have property "..field)
@@ -359,16 +354,13 @@ function load_rules_doc(rules_mgr, doc, load_state)
 	 end
 
 	 if append then
-	    if state.lists_by_name[v['list']] == nil then
+	    if state.defined_lists[v['list']] == nil then
 	       return false, build_error_with_context(v['context'], "List " ..v['list'].. " has 'append' key but no list by that name already exists")
 	    end
-
-	    for j, elem in ipairs(v['items']) do
-	       table.insert(state.lists_by_name[v['list']]['items'], elem)
-	    end
-	 else
-	    state.lists_by_name[v['list']] = v
 	 end
+
+	 falco_rules.add_list(rules_mgr, v['list'], v['items'], append)
+	 state.defined_lists[v['list']] = 1
 
       elseif (v['rule']) then
 
@@ -433,7 +425,7 @@ function load_rules_doc(rules_mgr, doc, load_state)
 	       -- loaded in the order in which they first appeared,
 	       -- potentially across multiple files.
 	       if state.rules_by_name[v['rule']] == nil then
-		  state.ordered_rule_names[#state.ordered_rule_names+1] = v['rule']
+		  load_state.ordered_rule_names[#load_state.ordered_rule_names+1] = v['rule']
 	       end
 
 	       -- The output field might be a folded-style, which adds a
@@ -466,8 +458,9 @@ function load_rules(sinsp_lua_parser,
 		    replace_container_info,
 		    min_priority)
 
-   local load_state = {lines={}, indices={}, cur_item_idx=0, min_priority=min_priority, required_engine_version=0}
-
+   local load_state = {lines={}, indices={}, cur_item_idx=0, min_priority=min_priority, required_engine_version=0,
+		       ordered_rule_names={}, ordered_macro_names={}}
+   print("BEGIN")
    load_state.lines, load_state.indices = split_lines(rules_content)
 
    local status, docs = pcall(yaml.load, rules_content, { all = true })
@@ -520,40 +513,16 @@ function load_rules(sinsp_lua_parser,
       end
    end
 
-   -- We've now loaded all the rules, macros, and lists. Now
-   -- compile/expand the rules, macros, and lists. We use
-   -- ordered_rule_{lists,macros,names} to compile them in the order
-   -- in which they appeared in the file(s).
-   reset_rules(rules_mgr)
+   -- We've now loaded all the rules, macros, and lists from the new
+   -- content. Now compile/expand the new rules/macros. We
+   -- use ordered_rule_{macros,names} to compile them in the
+   -- order in which they appeared in the file(s).
 
-   for i, name in ipairs(state.ordered_list_names) do
-
-      local v = state.lists_by_name[name]
-
-      -- list items are represented in yaml as a native list, so no
-      -- parsing necessary
-      local items = {}
-
-      -- List items may be references to other lists, so go through
-      -- the items and expand any references to the items in the list
-      for i, item in ipairs(v['items']) do
-	 if (state.lists[item] == nil) then
-	    items[#items+1] = item
-	 else
-	    for i, exp_item in ipairs(state.lists[item].items) do
-	       items[#items+1] = exp_item
-	    end
-	 end
-      end
-
-      state.lists[v['list']] = {["items"] = items, ["used"] = false}
-   end
-
-   for _, name in ipairs(state.ordered_macro_names) do
+   for _, name in ipairs(load_state.ordered_macro_names) do
 
       local v = state.macros_by_name[name]
 
-      local status, ast = compiler.compile_macro(v['condition'], state.macros, state.lists)
+      local status, ast = compiler.compile_macro(rules_mgr, v['condition'], state.macros)
 
       if status == false then
 	 return false, build_error_with_context(v['context'], ast)
@@ -568,7 +537,8 @@ function load_rules(sinsp_lua_parser,
       state.macros[v['macro']] = {["ast"] = ast.filter.value, ["used"] = false}
    end
 
-   for _, name in ipairs(state.ordered_rule_names) do
+   print("RULES")
+   for _, name in ipairs(load_state.ordered_rule_names) do
 
       local v = state.rules_by_name[name]
 
@@ -577,8 +547,8 @@ function load_rules(sinsp_lua_parser,
 	 warn_evttypes = v['warn_evttypes']
       end
 
-      local status, filter_ast, filters = compiler.compile_filter(v['rule'], v['condition'],
-								  state.macros, state.lists)
+      local status, filter_ast, filters = compiler.compile_filter(rules_mgr, v['rule'], v['condition'],
+								  state.macros)
 
       if status == false then
 	 return false, build_error_with_context(v['context'], filter_ast)
@@ -642,6 +612,7 @@ function load_rules(sinsp_lua_parser,
 	 end
       end
 
+      print("JSS")
       if (filter_ast.type == "Rule") then
 	 state.n_rules = state.n_rules + 1
 
@@ -733,15 +704,12 @@ function load_rules(sinsp_lua_parser,
 	 end
       end
 
-      for name, list in pairs(state.lists) do
-	 if list.used == false then
-	    print("Warning: list "..name.." not refered to by any rule/macro/list")
-	 end
-      end
+      falco_rules.warn_unused_lists(rules_mgr)
    end
 
    io.flush()
 
+   print("END")
    return true, load_state.required_engine_version
 end
 

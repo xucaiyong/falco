@@ -48,18 +48,31 @@ class falco_rules
 	static int add_k8s_audit_filter(lua_State *ls);
 	static int enable_rule(lua_State *ls);
 	static int engine_version(lua_State *ls);
+	static int add_list(lua_State *ls);
+	static int expand_lists_in(lua_State *ls);
+	static int warn_unused_lists(lua_State *ls);
 
  private:
 	void clear_filters();
 	void add_filter(string &rule, std::set<uint32_t> &evttypes, std::set<uint32_t> &syscalls, std::set<string> &tags);
 	void add_k8s_audit_filter(string &rule, std::set<string> &tags);
 	void enable_rule(string &rule, bool enabled);
+	void add_list(std::string &name, std::list<std::string> &items, bool append);
+	std::string expand_lists_in(std::string &source);
+	void warn_unused_lists();
 
 	lua_parser* m_sinsp_lua_parser;
 	lua_parser* m_json_lua_parser;
 	sinsp* m_inspector;
 	falco_engine *m_engine;
 	lua_State* m_ls;
+
+	struct list_t {
+		std::list<std::string> m_items;
+		bool m_used;
+	};
+
+	std::map<std::string, list_t> m_lists;
 
 	string m_lua_load_rules = "load_rules";
 	string m_lua_ignored_syscalls = "ignored_syscalls";
